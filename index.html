@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Branch Target Tracker</title>
+<style>
+:root{
+  --bg:#f4f6f9;--surface:#ffffff;--surface2:#f8fafc;--text:#17202b;--muted:#5d6b7c;--border:#e1e6ec;
+  --accent:#1d5fd1;--accent-soft:#e7effc;--ok:#13804a;--ok-soft:#e5f5ec;--bad:#c23a2b;--bad-soft:#fbe9e6;
+  --warn:#a35f00;--warn-soft:#fdf2df;--neutral:#8a96a5;--neutral-soft:#eef1f5;--target:#9aa6b4;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0e1217;--surface:#161b22;--surface2:#1b212a;--text:#e6eaf0;--muted:#97a3b3;--border:#2a323d;
+  --accent:#6ea2f7;--accent-soft:#1c2a40;--ok:#4cc483;--ok-soft:#14291f;--bad:#f07a6b;--bad-soft:#33191a;
+  --warn:#f0b44c;--warn-soft:#2e2414;--neutral:#7d8899;--neutral-soft:#222934;--target:#6b7787;--shadow:none;}}
+:root[data-theme="dark"]{
+  --bg:#0e1217;--surface:#161b22;--surface2:#1b212a;--text:#e6eaf0;--muted:#97a3b3;--border:#2a323d;
+  --accent:#6ea2f7;--accent-soft:#1c2a40;--ok:#4cc483;--ok-soft:#14291f;--bad:#f07a6b;--bad-soft:#33191a;
+  --warn:#f0b44c;--warn-soft:#2e2414;--neutral:#7d8899;--neutral-soft:#222934;--target:#6b7787;--shadow:none;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+.wrap{max-width:1240px;margin:0 auto;padding:16px}
+header.top{background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:20}
+header.top .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding-top:10px;padding-bottom:10px}
+.brand{font-weight:700;font-size:16px;letter-spacing:.2px;margin-right:auto}
+.brand small{display:block;font-weight:500;color:var(--muted);font-size:12px}
+.tabs{display:flex;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:3px}
+.tabs button{border:0;background:none;padding:6px 14px;border-radius:6px;cursor:pointer;color:var(--muted);font-weight:600}
+.tabs button.on{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
+.monthnav{display:flex;align-items:center;gap:4px}
+.btn{border:1px solid var(--border);background:var(--surface);padding:6px 12px;border-radius:7px;cursor:pointer;font-weight:600;white-space:nowrap}
+.btn:hover{background:var(--surface2)}
+.btn:disabled{opacity:.55;cursor:default}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.danger{color:var(--bad)}
+.btn.sm{padding:4px 9px;font-size:13px}
+.btn.icon{padding:6px 9px}
+input[type=month],input.field,select.field{border:1px solid var(--border);background:var(--surface);border-radius:7px;padding:6px 9px;min-width:0}
+select.field{font-weight:600}
+.userchip{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.userchip b{color:var(--text)}
+.saving{font-size:12px;font-weight:600;color:var(--warn);background:var(--warn-soft);padding:3px 9px;border-radius:999px;visibility:hidden}
+.saving.on{visibility:visible}
+.banner{display:none;padding:8px 16px;text-align:center;font-weight:600}
+.banner.on{display:block}
+.banner.err{background:var(--bad-soft);color:var(--bad)}
+.banner.info{background:var(--warn-soft);color:var(--warn)}
+h2{font-size:20px;margin:4px 0 2px}
+h3{font-size:14px;margin:0 0 12px;color:var(--text)}
+.sub{color:var(--muted);margin:0 0 14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;box-shadow:var(--shadow)}
+.kpi .l{color:var(--muted);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+.kpi .v{font-size:18px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
+.kpi .h{font-size:12px;color:var(--muted);margin-top:2px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:var(--shadow);margin-bottom:14px;min-width:0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:860px){.grid2{grid-template-columns:1fr}}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:12px}
+.toolbar label{font-weight:600}
+#target{width:170px;font-weight:700;text-align:right}
+#target:disabled{background:var(--surface2);color:var(--muted)}
+.hint{font-size:12px;color:var(--muted)}
+.tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:7px 8px;font-size:13px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap}
+th{background:var(--surface2);font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);position:sticky;top:0;z-index:1}
+td.l,th.l{text-align:left}
+tbody tr:last-child td{border-bottom:0}
+tr.st-edit td{background:var(--accent-soft)}
+tr.st-future td{color:var(--neutral)}
+tr.today td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+tfoot td{font-weight:700;background:var(--surface2);border-top:2px solid var(--border)}
+input.ach{width:105px;text-align:right;border:1.5px solid var(--accent);background:var(--surface);border-radius:6px;padding:5px 8px;font-weight:700}
+input.ach:focus{outline:2px solid var(--accent);outline-offset:1px}
+.lock{display:inline-block;width:12px;height:12px;margin-left:6px;vertical-align:-1px;opacity:.55}
+.pos{color:var(--ok)}.neg{color:var(--bad)}
+.chip{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:700;letter-spacing:.2px}
+.c-ok{background:var(--ok-soft);color:var(--ok)}.c-bad{background:var(--bad-soft);color:var(--bad)}
+.c-warn{background:var(--warn-soft);color:var(--warn)}.c-neu{background:var(--neutral-soft);color:var(--muted)}
+.c-acc{background:var(--accent-soft);color:var(--accent)}
+select.status{border:1px solid transparent;border-radius:999px;padding:3px 6px;font-size:11.5px;font-weight:700;cursor:pointer}
+.note{color:var(--muted);font-size:12.5px;margin:10px 2px 0}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:-4px 0 8px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.legend i.line{height:2px;border-radius:0;vertical-align:3px;width:14px}
+svg.chart{width:100%;height:auto;display:block}
+svg .grid{stroke:var(--border);stroke-width:1}
+svg .tick{fill:var(--muted);font-size:11px}
+svg .lbl{fill:var(--text);font-size:12px;font-weight:600}
+svg .b-ok{fill:var(--ok)}svg .b-bad{fill:var(--bad)}svg .b-acc{fill:var(--accent)}svg .b-tgt{fill:var(--neutral-soft);stroke:var(--target)}
+svg .tline{stroke:var(--target);stroke-width:1.5;stroke-dasharray:5 4;fill:none}
+svg .aline{stroke:var(--accent);stroke-width:2.5;fill:none}
+svg .area{fill:var(--accent);opacity:.1}
+svg .todayl{stroke:var(--warn);stroke-width:1.5;stroke-dasharray:3 3}
+.progress{position:relative;height:16px;background:var(--neutral-soft);border-radius:999px;margin:22px 0 8px}
+.progress .fill{height:100%;border-radius:999px;background:var(--accent);max-width:100%}
+.progress .mark{position:absolute;top:-6px;bottom:-6px;width:2px;background:var(--warn)}
+.progress .mark span{position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--warn);white-space:nowrap;font-weight:600}
+.prow{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:13px;color:var(--muted)}
+.stack{display:flex;height:14px;border-radius:999px;overflow:hidden;background:var(--neutral-soft);margin-bottom:12px}
+.stack div{height:100%}
+.slist{list-style:none;margin:0;padding:0}
+.slist li{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)}
+.slist li:last-child{border-bottom:0}
+tr.click{cursor:pointer}tr.click:hover td{background:var(--surface2)}
+tr.sel td{background:var(--accent-soft)}
+dialog{border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);padding:20px;width:min(440px,calc(100vw - 32px));box-shadow:0 10px 40px rgba(0,0,0,.25)}
+dialog.wide{width:min(760px,calc(100vw - 32px))}
+dialog::backdrop{background:rgba(10,15,25,.45)}
+dialog h3{font-size:16px;margin-bottom:6px}
+dialog h4{margin:18px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
+dialog input.field{width:100%;margin-top:8px}
+.inline{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.inline input.field{width:auto;flex:1 1 150px;margin-top:0}
+.btbl td{padding:6px;vertical-align:middle}
+.btbl input.field{width:100%;margin:0}
+.err{color:var(--bad);font-size:12.5px;min-height:18px;margin-top:6px}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);background:var(--text);color:var(--bg);padding:9px 16px;border-radius:8px;font-weight:600;opacity:0;transition:.2s;pointer-events:none;z-index:60;max-width:calc(100vw - 32px)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.bad{background:var(--bad);color:#fff}
+.menu{position:relative}
+.menu .pop{display:none;position:absolute;right:0;top:calc(100% + 6px);background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.15);padding:6px;min-width:210px;z-index:30}
+.menu.open .pop{display:block}
+.pop button{display:block;width:100%;text-align:left;border:0;background:none;padding:8px 10px;border-radius:6px;cursor:pointer}
+.pop button:hover{background:var(--surface2)}
+.hide{display:none!important}
+.empty{padding:28px;text-align:center;color:var(--muted)}
+/* login */
+#gate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+#gate .card{width:min(400px,100%);padding:24px}
+#gate h2{margin-bottom:4px}
+#gate label{display:block;font-weight:600;font-size:13px;margin-top:14px}
+#gate .field{width:100%;margin-top:6px}
+#gate .btn.primary{width:100%;margin-top:18px;padding:9px}
+body.gated #app{display:none}
+body:not(.gated) #gate{display:none}
+@media (max-width:600px){.wrap{padding:12px 16px}.brand{width:100%}}
+@media print{header.top .tabs,header.top .monthnav,.menu,#logoutBtn,.toast,.banner{display:none!important}
+  body{background:#fff}.card,.kpi{box-shadow:none}header.top{position:static}}
+</style>
+</head>
+<body class="gated">
+
+<!-- ============ LOGIN ============ -->
+<div id="gate">
+  <div class="card">
+    <h2>Branch Target Tracker</h2>
+    <p class="sub" style="margin:0">Renew Groups · sign in to continue</p>
+    <div id="setupBox" class="hide">
+      <label for="apiIn">Google Apps Script Web App URL</label>
+      <input class="field" id="apiIn" placeholder="https://script.google.com/macros/s/…/exec">
+      <div class="hint" style="margin-top:6px">One-time setup. To set it for everyone, paste the URL into <code>API_URL</code> in index.html on GitHub.</div>
+      <button class="btn primary" id="apiSave">Connect</button>
+    </div>
+    <div id="loginBox" class="hide">
+      <label for="loginWho">Branch</label>
+      <select class="field" id="loginWho"></select>
+      <label for="loginPw">Password</label>
+      <input class="field" id="loginPw" type="password" autocomplete="current-password">
+      <div class="err" id="loginErr"></div>
+      <button class="btn primary" id="loginBtn">Sign in</button>
+      <div class="hint" style="margin-top:10px;text-align:center"><a href="#" id="changeApi" style="color:var(--muted)">Change server URL</a></div>
+    </div>
+    <div id="gateMsg" class="hint" style="margin-top:14px"></div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app">
+<div class="banner err" id="errBanner"></div>
+<header class="top">
+  <div class="wrap">
+    <div class="brand">Branch Sales Target Tracker<small id="brandSub">Renew Groups</small></div>
+    <div class="tabs" role="tablist">
+      <button data-tab="tracker" class="on">Tracker</button>
+      <button data-tab="dash">Dashboard</button>
+    </div>
+    <select class="field" id="branchSel" aria-label="Branch"></select>
+    <div class="monthnav">
+      <button class="btn icon" id="prevM" title="Previous month">‹</button>
+      <input type="month" id="monthPick" aria-label="Month">
+      <button class="btn icon" id="nextM" title="Next month">›</button>
+    </div>
+    <span class="saving" id="saving">Saving…</span>
+    <div class="menu" id="menu">
+      <button class="btn" id="menuBtn">More ▾</button>
+      <div class="pop">
+        <button id="refreshBtn">Refresh data</button>
+        <button id="expCsv">Export this view (.csv)</button>
+        <button id="printBtn">Print / Save as PDF</button>
+        <button id="adminPanelBtn" class="hide">Admin settings…</button>
+      </div>
+    </div>
+    <button class="btn" id="logoutBtn" title="Sign out">Sign out · <span id="meName"></span></button>
+  </div>
+</header>
+
+<main class="wrap">
+  <section id="tracker">
+    <h2 id="tTitle"></h2>
+    <p class="sub" id="tSub"></p>
+    <div class="kpis" id="kpis"></div>
+    <div class="card">
+      <div class="toolbar">
+        <label for="target">Monthly Target (₹)</label>
+        <input class="field" id="target" inputmode="decimal" autocomplete="off">
+        <span class="hint" id="targetHint"></span>
+      </div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr>
+            <th class="l">Date</th><th class="l">Day</th><th>Daily Target</th><th>Achieved</th><th>Daily Variance</th>
+            <th>Cumulative Target</th><th>Cumulative Achieved</th><th>Cumulative Gap</th><th>Achievement %</th><th class="l">Status</th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+          <tfoot id="tfoot"></tfoot>
+        </table>
+      </div>
+      <p class="note" id="tNote"></p>
+    </div>
+  </section>
+
+  <section id="dash" class="hide">
+    <h2 id="dTitle"></h2>
+    <p class="sub" id="dSub"></p>
+    <div class="kpis" id="dkpis"></div>
+    <div class="card">
+      <h3>Progress to monthly target</h3>
+      <div class="progress"><div class="fill" id="pFill"></div><div class="mark" id="pMark"><span id="pMarkL"></span></div></div>
+      <div class="prow"><span id="pLeft"></span><span id="pRight"></span></div>
+    </div>
+    <div class="card" id="cmpCard">
+      <h3 id="cmpTitle">Branch comparison</h3>
+      <div class="legend"><span><i style="background:var(--ok)"></i>At or ahead of pace</span><span><i style="background:var(--bad)"></i>Behind pace</span><span><i class="line" style="border-top:2px dashed var(--warn)"></i>Expected by today</span></div>
+      <div id="chCmp"></div>
+      <div class="tablewrap" style="margin-top:12px">
+        <table><thead><tr><th class="l">#</th><th class="l">Branch</th><th>Target</th><th>Achieved</th><th>Achievement %</th><th>Expected till today</th><th>Ahead / Behind</th><th>Balance</th><th>Req. Daily Run Rate</th><th>Days Entered</th><th class="l">Status</th></tr></thead>
+        <tbody id="cmpBody"></tbody><tfoot id="cmpFoot"></tfoot></table>
+      </div>
+      <p class="note">Click a branch to open its dashboard.</p>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3>Daily achieved vs daily target</h3>
+        <div class="legend"><span><i style="background:var(--ok)"></i>Met target</span><span><i style="background:var(--bad)"></i>Below target</span><span><i class="line" style="border-top:2px dashed var(--target)"></i>Daily target</span></div>
+        <div id="chDaily"></div>
+      </div>
+      <div class="card">
+        <h3>Cumulative achieved vs cumulative target</h3>
+        <div class="legend"><span><i class="line" style="background:var(--accent)"></i>Achieved</span><span><i class="line" style="border-top:2px dashed var(--target)"></i>Target</span><span><i class="line" style="border-top:2px dashed var(--warn)"></i>Today</span></div>
+        <div id="chCum"></div>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="card"><h3>Day status breakdown</h3><div id="stBreak"></div></div>
+      <div class="card"><h3>Top 5 days</h3><div id="topDays"></div></div>
+    </div>
+    <div class="card">
+      <h3 id="yTitle"></h3>
+      <div class="legend"><span><i style="background:var(--neutral-soft);border:1px solid var(--target)"></i>Target</span><span><i style="background:var(--accent)"></i>Achieved</span></div>
+      <div id="chYear"></div>
+      <div class="tablewrap" style="margin-top:12px">
+        <table><thead><tr><th class="l">Month</th><th>Target</th><th>Achieved</th><th>Achievement %</th><th>Balance</th><th>Days Entered</th><th class="l">Status</th></tr></thead>
+        <tbody id="yBody"></tbody><tfoot id="yFoot"></tfoot></table>
+      </div>
+      <p class="note">Click a month to open it.</p>
+    </div>
+  </section>
+</main>
+</div>
+
+<!-- ============ ADMIN DIALOG ============ -->
+<dialog id="dlgAdmin" class="wide">
+  <h3>Admin settings</h3>
+  <div class="hint">Changes are saved to the Google Sheet immediately and apply to everyone.</div>
+  <h4>Branches</h4>
+  <div class="tablewrap"><table class="btbl"><thead><tr><th class="l">Branch name</th><th class="l">New password</th><th class="l">Active</th><th></th></tr></thead><tbody id="brBody"></tbody></table></div>
+  <h4>Add a branch</h4>
+  <div class="inline"><input class="field" id="nbName" placeholder="Branch name"><input class="field" id="nbPw" type="password" placeholder="Branch password (min 4)"><button class="btn primary" id="nbAdd">Add branch</button></div>
+  <h4>Change admin password</h4>
+  <div class="inline"><input class="field" id="apOld" type="password" placeholder="Current password"><input class="field" id="apNew" type="password" placeholder="New password (min 6)"><input class="field" id="apNew2" type="password" placeholder="Confirm new"><button class="btn" id="apSave">Change</button></div>
+  <h4>Danger zone</h4>
+  <div class="inline"><button class="btn danger" id="clearMonth">Clear selected branch &amp; month…</button><span class="hint" id="clearHint"></span></div>
+  <div class="err" id="adminErr"></div>
+  <div class="row"><button class="btn" data-close>Close</button></div>
+</dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ======================================================================
+   SETUP: paste your Google Apps Script Web App URL between the quotes.
+   ====================================================================== */
+var API_URL = 'https://script.google.com/macros/s/AKfycbzBawVZrGfi8ewGbKSvogzAr4oZ5ARI_sKGL-9Lhi5SnxKFgfUD6M1495-APVHjnbsM/exec';
+
+(function(){
+"use strict";
+function lsGet(k){try{return localStorage.getItem(k);}catch(e){return null;}}
+function lsSet(k,v){try{if(v===null)localStorage.removeItem(k);else localStorage.setItem(k,v);}catch(e){}}
+var api=API_URL||lsGet('rg_api_url')||'';
+var S={token:lsGet('rg_token'),me:null,data:null};
+var MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+var DOW=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+var STATUSES=['ON TRACK','BACKLOG','PENDING','ACHIEVED','HOLIDAY','WEEK OFF','LEAVE'];
+function pad(n){return (n<10?'0':'')+n;}
+function $(id){return document.getElementById(id);}
+var serverToday=null;
+function todayD(){if(serverToday){var p=serverToday.split('-');return new Date(+p[0],+p[1]-1,+p[2]);}var n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate());}
+var t0=todayD(),cur=t0.getFullYear()+'-'+pad(t0.getMonth()+1),sel=null,tab='tracker',busy=false;
+
+function inr(n){var r=Math.round(n);return (r<0?'-':'')+'₹'+Math.abs(r).toLocaleString('en-IN');}
+function sinr(n){var r=Math.round(n);return (r>0?'+':'')+inr(n);}
+function pc(x){return (x*100).toFixed(1)+'%';}
+function compact(n){var a=Math.abs(n);function t(x){return x.toFixed(1).replace(/\.0$/,'');}
+  if(a>=1e7)return '₹'+t(n/1e7)+'Cr';if(a>=1e5)return '₹'+t(n/1e5)+'L';if(a>=1e3)return '₹'+Math.round(n/1e3)+'K';return '₹'+Math.round(n);}
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function parseNum(s){s=String(s).replace(/[₹,\s]/g,'');if(s==='')return '';var n=Number(s);return isFinite(n)?n:NaN;}
+function monthLabel(k){var p=k.split('-');return MONTHS[+p[1]-1]+' '+p[0];}
+
+/* ---------------- API ---------------- */
+function call(action,params,quiet){
+  if(!api)return Promise.reject(new Error('Server URL not set'));
+  var body=JSON.stringify(Object.assign({action:action,token:S.token},params||{}));
+  if(!quiet)setBusy(true);
+  return fetch(api,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:body,redirect:'follow'})
+    .then(function(r){if(!r.ok)throw new Error('Server error ('+r.status+')');return r.json();})
+    .then(function(j){
+      if(!quiet)setBusy(false); showErr('');
+      if(!j.ok){if(j.code==='AUTH'&&action!=='login'){signOut(j.error);} var e=new Error(j.error||'Request failed');e.code=j.code;throw e;}
+      if(j.data)setData(j.data);
+      return j;
+    },function(err){if(!quiet)setBusy(false);
+      if(!(err&&err.code))showErr('Cannot reach the server — check your internet connection. ('+(err.message||err)+')');throw err;});
+}
+function setBusy(b){busy=b;$('saving').classList.toggle('on',b);}
+function showErr(m){var b=$('errBanner');b.textContent=m;b.classList.toggle('on',!!m);}
+function setData(d){S.data=d;S.me=d.me;serverToday=d.today;STATUSES=d.statuses||STATUSES;
+  var ids=visibleBranches().map(function(b){return b.id;});
+  if(sel!=='ALL'&&ids.indexOf(sel)<0)sel=S.me.role==='branch'&&ids.indexOf(S.me.branchId)>=0?S.me.branchId:(ids.length>1||S.me.role==='admin'?'ALL':ids[0]||'ALL');
+}
+
+/* ---------------- login gate ---------------- */
+function showGate(msg){document.body.classList.add('gated');$('gateMsg').textContent=msg||'';
+  if(!api){$('setupBox').classList.remove('hide');$('loginBox').classList.add('hide');return;}
+  $('setupBox').classList.add('hide');$('loginBox').classList.remove('hide');
+  $('changeApi').parentNode.classList.toggle('hide',!!API_URL);
+  var w=$('loginWho');w.innerHTML='<option>Loading branches…</option>';
+  call('branches',{},true).then(function(j){
+    w.innerHTML=j.branches.map(function(b){return '<option value="'+esc(b.id)+'">'+esc(b.name)+'</option>';}).join('')+'<option value="admin">Admin</option>';
+    var last=lsGet('rg_last_who');if(last&&w.querySelector('option[value="'+last+'"]'))w.value=last;
+    if(!j.branches.length)$('gateMsg').textContent='No branches yet — sign in as Admin to add them.';
+  }).catch(function(e){w.innerHTML='<option value="admin">Admin</option>';$('gateMsg').textContent='Could not load branches: '+e.message;});
+}
+$('apiSave').onclick=function(){var v=$('apiIn').value.trim();if(!/^https:\/\/script\.google(usercontent)?\.com\//.test(v)){$('gateMsg').textContent='That does not look like an Apps Script web app URL.';return;}
+  api=v;lsSet('rg_api_url',v);showGate();};
+$('changeApi').onclick=function(e){e.preventDefault();api='';lsSet('rg_api_url',null);showGate();};
+function doLogin(){var who=$('loginWho').value,pw=$('loginPw').value;$('loginErr').textContent='';
+  if(!pw){$('loginErr').textContent='Enter the password.';return;}
+  $('loginBtn').disabled=true;$('loginBtn').textContent='Signing in…';
+  call('login',{branchId:who,password:pw},true).then(function(j){
+    S.token=j.token;lsSet('rg_token',j.token);lsSet('rg_last_who',who);$('loginPw').value='';
+    return call('data',{},true);
+  }).then(function(){sel=null;setData(S.data);enterApp();})
+  .catch(function(e){$('loginErr').textContent=e.message;})
+  .then(function(){$('loginBtn').disabled=false;$('loginBtn').textContent='Sign in';});
+}
+$('loginBtn').onclick=doLogin;
+$('loginPw').addEventListener('keydown',function(e){if(e.key==='Enter')doLogin();});
+function signOut(msg){if(S.token)call('logout',{},true).catch(function(){});S.token=null;S.data=null;lsSet('rg_token',null);showGate(msg);}
+$('logoutBtn').onclick=function(){signOut('Signed out.');};
+function enterApp(){document.body.classList.remove('gated');renderAll();}
+
+/* ---------------- data model ---------------- */
+function visibleBranches(){return S.data?S.data.branches.filter(function(b){return b.active;}):[];}
+function branchName(id){if(id==='ALL')return 'All branches';var b=S.data.branches.filter(function(x){return x.id===id;})[0];return b?b.name:id;}
+function canEdit(scope){return scope!=='ALL'&&S.me&&(S.me.role==='admin'||S.me.branchId===scope);}
+function monthData(scope,k){
+  var ids=scope==='ALL'?visibleBranches().map(function(b){return b.id;}):[scope];
+  var T=0,days={},n=0;
+  ids.forEach(function(id){
+    var t=(S.data.targets[id]||{})[k]||0;T+=t;if(t>0)n++;
+    var ent=S.data.entries[id]||{};
+    Object.keys(ent).forEach(function(dt){if(dt.slice(0,7)!==k)return;var d=+dt.slice(8,10),e=ent[dt];
+      var r=days[d]||(days[d]={a:null,s:'',cnt:0});
+      if(e.a!==null&&e.a!==undefined){r.a=(r.a||0)+Number(e.a);r.cnt++;}
+      if(scope!=='ALL')r.s=e.s||'';});
+  });
+  return {target:T,days:days,branches:n,ids:ids};
+}
+function calc(scope,k){
+  var p=k.split('-').map(Number),y=p[0],m=p[1],n=new Date(y,m,0).getDate();
+  var mo=monthData(scope,k),T=mo.target,dt=T/n,today=todayD();
+  var rows=[],cumT=0,cumA=0,done=0,last=0,first=0,expTo=0;
+  for(var d=1;d<=n;d++){
+    var rec=mo.days[d]||{},a=(rec.a===undefined||rec.a===null)?null:+rec.a;
+    var date=new Date(y,m-1,d);cumT+=dt;if(date<=today)expTo=cumT;
+    if(a!==null){cumA+=a;done++;last=d;}else if(!first)first=d;
+    var v=a===null?null:a-dt,auto=a===null?'PENDING':(v>=-0.005?'ON TRACK':'BACKLOG');
+    rows.push({d:d,date:date,a:a,v:v,cumT:cumT,cumA:cumA,gap:cumT-cumA,pct:cumT?cumA/cumT:0,cnt:rec.cnt||0,
+      manual:rec.s||'',status:rec.s||auto,auto:auto,past:date<=today,isToday:+date===+today});
+  }
+  var bal=Math.max(T-cumA,0),rem=n-done,rr=rem>0?bal/rem:0;
+  var overall=T<=0?'NO TARGET':(cumA>=T?'TARGET ACHIEVED':(rr<=dt+0.005?'ON TRACK':'RUN RATE REQUIRED'));
+  return {scope:scope,k:k,y:y,m:m,n:n,T:T,dt:dt,rows:rows,ach:cumA,bal:bal,pct:T?cumA/T:0,done:done,rem:rem,rr:rr,
+    overall:overall,first:first||n+1,last:last,expTo:expTo,nb:mo.ids.length};
+}
+function rowState(c,r){
+  if(!canEdit(c.scope))return r.date>todayD()?'future':'view';
+  if(S.me.role==='admin')return 'edit';
+  if(c.T<=0)return 'notarget';
+  var today=todayD();
+  if(r.date>today)return 'future';
+  if(r.a===null)return r.d===c.first?'edit':'waiting';
+  if(r.d===c.first-1&&new Date(c.y,c.m-1,r.d+1)>today)return 'edit';
+  return 'locked';
+}
+function chipCls(s){return s==='ON TRACK'||s==='TARGET ACHIEVED'||s==='ACHIEVED'?'c-ok':s==='BACKLOG'||s==='RUN RATE REQUIRED'?'c-bad':
+  s==='PENDING'||s==='NO TARGET'?'c-neu':s==='HOLIDAY'||s==='WEEK OFF'||s==='LEAVE'?'c-acc':'c-warn';}
+var LOCK='<svg class="lock" viewBox="0 0 16 16" aria-label="Locked"><path fill="currentColor" d="M4 7V5a4 4 0 1 1 8 0v2h.5A1.5 1.5 0 0 1 14 8.5v5A1.5 1.5 0 0 1 12.5 15h-9A1.5 1.5 0 0 1 2 13.5v-5A1.5 1.5 0 0 1 3.5 7H4Zm2 0h4V5a2 2 0 1 0-4 0v2Z"/></svg>';
+function kpi(l,v,h,cls){return '<div class="kpi"><div class="l">'+l+'</div><div class="v '+(cls||'')+'">'+v+'</div>'+(h?'<div class="h">'+h+'</div>':'')+'</div>';}
+function kpiSet(c){
+  return kpi('Monthly Target',inr(c.T),c.scope==='ALL'?c.nb+' branches':null)+kpi('Achieved Till Date',inr(c.ach))+
+    kpi('Achievement %',pc(c.pct),null,c.pct>=1?'pos':'')+kpi('Balance to Target',inr(c.bal))+
+    kpi('Days Completed',c.done+' / '+c.n,c.rem+' days remaining')+kpi('Daily Target',inr(c.dt),'Target ÷ '+c.n+' days')+
+    kpi('Required Daily Run Rate',inr(c.rr),c.rem?'Balance ÷ remaining days':'Month complete',c.rr>c.dt+0.5?'neg':'pos')+
+    kpi('Overall Status','<span class="chip '+chipCls(c.overall)+'" style="font-size:13px">'+c.overall+'</span>');
+}
+
+/* ---------------- tracker ---------------- */
+function renderTracker(){
+  var c=calc(sel,cur),edit=canEdit(sel),isAdmin=S.me.role==='admin';
+  $('tTitle').textContent=branchName(sel)+' — '+monthLabel(cur);
+  $('tSub').textContent='Target '+inr(c.T)+' · '+c.n+' days · Daily target '+inr(c.dt)+(edit?'':' · view only');
+  $('kpis').innerHTML=kpiSet(c);
+  var tg=$('target'),hint=$('targetHint');
+  if(document.activeElement!==tg)tg.value=c.T?Math.round(c.T*100)/100:'';
+  var tLocked=!edit||(!isAdmin&&c.done>0);tg.disabled=tLocked||busy;
+  hint.innerHTML=sel==='ALL'?'Sum of all branch targets. Pick a branch to edit.':!edit?'View only — you can edit your own branch.':
+    tLocked?LOCK+' Locked after the first day was entered — admin can change it.':(c.T?'Editable until the first day is entered.':'<b>Set the monthly target to start entering daily sales.</b>');
+  var h='';
+  c.rows.forEach(function(r){
+    var st=rowState(c,r),ach;
+    if(st==='edit')ach='<input class="ach" data-d="'+r.d+'" inputmode="decimal" autocomplete="off" value="'+(r.a===null?'':r.a)+'" placeholder="Enter"'+(busy?' disabled':'')+'>';
+    else ach=(r.a===null?'—':inr(r.a))+(st==='locked'?LOCK:'');
+    if(sel==='ALL'&&r.a!==null&&r.cnt<c.nb)ach+=' <span class="hint" title="Branches that have entered this day">('+r.cnt+'/'+c.nb+')</span>';
+    var title={locked:'Locked — admin only',future:'Opens on this date',waiting:'Fill the earlier day first',notarget:'Set monthly target first',edit:'',view:''}[st];
+    var stCell;
+    if(edit&&(r.past||isAdmin)){
+      var opts='<option value="">'+r.auto+' (auto)</option>'+STATUSES.map(function(s){return '<option'+(r.manual===s?' selected':'')+'>'+s+'</option>';}).join('');
+      stCell='<select class="status '+chipCls(r.status)+'" data-s="'+r.d+'" title="Status (manual)"'+(busy?' disabled':'')+'>'+opts+'</select>';
+    }else stCell='<span class="chip '+chipCls(r.status)+'">'+r.status+'</span>';
+    var has=r.a!==null,show=has||r.d<c.last;
+    h+='<tr class="st-'+st+(r.isToday?' today':'')+'" title="'+title+'">'+
+      '<td class="l">'+pad(r.d)+'-'+MONTHS[c.m-1].slice(0,3)+'</td><td class="l">'+DOW[r.date.getDay()]+'</td>'+
+      '<td>'+inr(c.dt)+'</td><td>'+ach+'</td>'+
+      '<td class="'+(has?(r.v>=-0.005?'pos':'neg'):'')+'">'+(has?sinr(r.v):'—')+'</td>'+
+      '<td>'+inr(r.cumT)+'</td><td>'+(show?inr(r.cumA):'—')+'</td>'+
+      '<td class="'+(show?(r.gap>0.005?'neg':'pos'):'')+'">'+(show?inr(r.gap):'—')+'</td>'+
+      '<td>'+(show?pc(r.pct):'—')+'</td><td class="l">'+stCell+'</td></tr>';
+  });
+  $('tbody').innerHTML=h;
+  $('tfoot').innerHTML='<tr><td class="l" colspan="2">Total</td><td>'+inr(c.T)+'</td><td>'+inr(c.ach)+'</td>'+
+    '<td class="'+(c.ach-c.expTo>=-0.005?'pos':'neg')+'" title="vs target expected till today">'+sinr(c.ach-c.expTo)+'</td><td>'+inr(c.T)+'</td><td>'+inr(c.ach)+'</td>'+
+    '<td>'+inr(c.T-c.ach)+'</td><td>'+pc(c.pct)+'</td><td class="l"><span class="chip '+chipCls(c.overall)+'">'+c.overall+'</span></td></tr>';
+  $('tNote').innerHTML=sel==='ALL'?'Combined view: each day adds up every branch\'s entry. Numbers in brackets show how many branches have entered that day.':
+    'Daily Target = Monthly Target ÷ number of days in the month. Enter the day\'s sales in <b>Achieved</b>. The next day opens once it\'s filled and its date has arrived, and the previous day then locks. Only an admin can change a locked day. Status is set automatically unless you pick one.';
+}
+$('target').addEventListener('change',function(e){
+  var v=parseNum(e.target.value);
+  if(v===''||isNaN(v)||v<0){toast('Enter a valid target amount',true);renderAll();return;}
+  call('setTarget',{branchId:sel,month:cur,target:v}).then(function(j){renderAll();toast(j.message+' — daily target '+inr(v/calc(sel,cur).n));})
+    .catch(function(err){toast(err.message,true);renderAll();});
+});
+$('target').addEventListener('keydown',function(e){if(e.key==='Enter')e.target.blur();});
+var tbody=$('tbody');
+tbody.addEventListener('change',function(e){
+  var el=e.target,date;
+  if(el.classList.contains('ach')){
+    var d=+el.dataset.d,v=parseNum(el.value);date=cur+'-'+pad(d);
+    if(isNaN(v)||(v!==''&&v<0)){toast('Enter a valid amount (0 or more)',true);el.focus();return;}
+    call('setEntry',{branchId:sel,date:date,achieved:v}).then(function(j){renderAll();
+      if(v!==''&&S.me.role!=='admin'){var nc=calc(sel,cur),nx=nc.rows[d];
+        if(nx&&rowState(nc,nx)==='edit'){toast('Day '+d+' saved and locked. Day '+(d+1)+' is open.');var ni=tbody.querySelector('input[data-d="'+(d+1)+'"]');if(ni)ni.focus();}
+        else toast('Day '+d+' saved. It stays editable until the next day opens.');
+      }else toast(j.message);
+    }).catch(function(err){toast(err.message,true);renderAll();});
+  }else if(el.dataset.s){
+    date=cur+'-'+pad(+el.dataset.s);
+    call('setStatus',{branchId:sel,date:date,status:el.value}).then(function(j){renderAll();toast(j.message);})
+      .catch(function(err){toast(err.message,true);renderAll();});
+  }
+});
+tbody.addEventListener('keydown',function(e){if(e.key==='Enter'&&e.target.classList.contains('ach'))e.target.blur();});
+
+/* ---------------- charts ---------------- */
+function niceMax(v){if(v<=0)return 1;var e=Math.pow(10,Math.floor(Math.log10(v))),f=v/e;return (f<=1?1:f<=2?2:f<=2.5?2.5:f<=5?5:10)*e;}
+function yAxis(max,W,L,R,top,ph){var s='';for(var i=0;i<=4;i++){var v=max*i/4,y=top+ph*(1-i/4);
+  s+='<line class="grid" x1="'+L+'" x2="'+(W-R)+'" y1="'+y+'" y2="'+y+'"/><text class="tick" x="'+(L-6)+'" y="'+(y+4)+'" text-anchor="end">'+compact(v)+'</text>';}return s;}
+function svg(W,H,s){return '<svg class="chart" viewBox="0 0 '+W+' '+H+'">'+s+'</svg>';}
+function dailyChart(c){
+  var W=560,H=250,L=56,R=10,top=10,B=26,pw=W-L-R,ph=H-top-B;
+  var mx=niceMax(Math.max(c.dt,Math.max.apply(null,c.rows.map(function(r){return r.a||0;})))*1.08);
+  var bw=pw/c.n,s=yAxis(mx,W,L,R,top,ph);
+  c.rows.forEach(function(r,i){var x=L+i*bw;
+    if(r.a!==null&&r.a>0){var h=ph*r.a/mx;s+='<rect class="'+(r.v>=-0.005?'b-ok':'b-bad')+'" x="'+(x+bw*.16)+'" y="'+(top+ph-h)+'" width="'+(bw*.68)+'" height="'+h+'" rx="2"><title>Day '+r.d+': '+inr(r.a)+' ('+sinr(r.v)+' vs target)</title></rect>';}
+    if(r.d===1||r.d%5===0)s+='<text class="tick" x="'+(x+bw/2)+'" y="'+(H-8)+'" text-anchor="middle">'+r.d+'</text>';});
+  var ty=top+ph*(1-c.dt/mx);s+='<line class="tline" x1="'+L+'" x2="'+(W-R)+'" y1="'+ty+'" y2="'+ty+'"><title>Daily target '+inr(c.dt)+'</title></line>';
+  return svg(W,H,s);
+}
+function cumChart(c){
+  var W=560,H=250,L=56,R=10,top=10,B=26,pw=W-L-R,ph=H-top-B;
+  var mx=niceMax(Math.max(c.T,c.ach)*1.04),s=yAxis(mx,W,L,R,top,ph);
+  function X(d){return L+pw*(d-0.5)/c.n;}function Y(v){return top+ph*(1-v/mx);}
+  var tp='',ap='';
+  c.rows.forEach(function(r){tp+=(r.d===1?'M':'L')+X(r.d)+' '+Y(r.cumT);
+    if(r.d<=c.last)ap+=(r.d===1?'M':'L')+X(r.d)+' '+Y(r.cumA);
+    if(r.d===1||r.d%5===0)s+='<text class="tick" x="'+X(r.d)+'" y="'+(H-8)+'" text-anchor="middle">'+r.d+'</text>';});
+  if(c.last)s+='<path class="area" d="'+ap+'L'+X(c.last)+' '+Y(0)+'L'+X(1)+' '+Y(0)+'Z"/>';
+  s+='<path class="tline" d="'+tp+'"/>';
+  if(c.last)s+='<path class="aline" d="'+ap+'"/><circle cx="'+X(c.last)+'" cy="'+Y(c.rows[c.last-1].cumA)+'" r="4" fill="var(--accent)"><title>Day '+c.last+': '+inr(c.rows[c.last-1].cumA)+'</title></circle>';
+  var td=c.rows.filter(function(r){return r.isToday;})[0];
+  if(td)s+='<line class="todayl" x1="'+X(td.d)+'" x2="'+X(td.d)+'" y1="'+top+'" y2="'+(top+ph)+'"/>';
+  return svg(W,H,s);
+}
+function yearChart(scope,y){
+  var W=1000,H=220,L=60,R=10,top=10,B=26,pw=W-L-R,ph=H-top-B,data=[],mxv=0;
+  for(var m=1;m<=12;m++){var k=y+'-'+pad(m),c=calc(scope,k),has=c.T>0||c.done>0;data.push({k:k,c:has?c:null});if(has)mxv=Math.max(mxv,c.T,c.ach);}
+  var mx=niceMax(mxv*1.08),s=yAxis(mx,W,L,R,top,ph),gw=pw/12;
+  data.forEach(function(o,i){var x=L+i*gw,bw=gw*.32;
+    if(o.c){var ht=ph*o.c.T/mx,ha=ph*o.c.ach/mx;
+      s+='<rect class="b-tgt" x="'+(x+gw*.16)+'" y="'+(top+ph-ht)+'" width="'+bw+'" height="'+ht+'" rx="2"><title>'+monthLabel(o.k)+' target '+inr(o.c.T)+'</title></rect>';
+      s+='<rect class="b-acc" x="'+(x+gw*.16+bw+2)+'" y="'+(top+ph-ha)+'" width="'+bw+'" height="'+ha+'" rx="2"><title>'+monthLabel(o.k)+' achieved '+inr(o.c.ach)+' ('+pc(o.c.pct)+')</title></rect>';}
+    s+='<text class="tick" x="'+(x+gw/2)+'" y="'+(H-8)+'" text-anchor="middle"'+(o.k===cur?' style="font-weight:700;fill:var(--text)"':'')+'>'+MONTHS[i].slice(0,3)+'</text>';});
+  return {svg:svg(W,H,s),data:data};
+}
+function cmpChart(list){
+  var rowH=30,L=150,R=70,W=1000,top=8,H=top+list.length*rowH+24,pw=W-L-R;
+  var mx=Math.max(1,Math.ceil(Math.max.apply(null,list.map(function(o){return Math.max(o.c.pct,o.exp);}))*1.1*4)/4);
+  var s='';
+  for(var i=0;i<=4;i++){var v=mx*i/4,x=L+pw*i/4;s+='<line class="grid" x1="'+x+'" x2="'+x+'" y1="'+top+'" y2="'+(H-22)+'"/><text class="tick" x="'+x+'" y="'+(H-6)+'" text-anchor="middle">'+Math.round(v*100)+'%</text>';}
+  list.forEach(function(o,i){var y=top+i*rowH,w=pw*Math.min(o.c.pct,mx)/mx,ahead=o.c.ach>=o.c.expTo-0.005;
+    s+='<text class="lbl" x="'+(L-10)+'" y="'+(y+rowH/2+4)+'" text-anchor="end">'+esc(o.name.length>20?o.name.slice(0,19)+'…':o.name)+'</text>';
+    s+='<rect class="'+(ahead?'b-ok':'b-bad')+'" x="'+L+'" y="'+(y+6)+'" width="'+Math.max(w,1)+'" height="'+(rowH-12)+'" rx="3"><title>'+esc(o.name)+': '+inr(o.c.ach)+' of '+inr(o.c.T)+' ('+pc(o.c.pct)+')</title></rect>';
+    s+='<text class="tick" x="'+(L+Math.max(w,1)+6)+'" y="'+(y+rowH/2+4)+'">'+pc(o.c.pct)+'</text>';
+    if(o.exp>0){var ex=L+pw*Math.min(o.exp,mx)/mx;s+='<line class="todayl" x1="'+ex+'" x2="'+ex+'" y1="'+(y+2)+'" y2="'+(y+rowH-2)+'"><title>Expected by today: '+pc(o.exp)+'</title></line>';}
+  });
+  return svg(W,H,s);
+}
+
+/* ---------------- dashboard ---------------- */
+function renderDash(){
+  var c=calc(sel,cur);
+  $('dTitle').textContent=(branchName(sel)+' — '+monthLabel(cur)).toUpperCase();
+  $('dSub').textContent=c.T||c.done?('Daily target '+inr(c.dt)+' · '+c.done+' of '+c.n+' days entered'):'No target set for this month yet.';
+  $('dkpis').innerHTML=kpiSet(c);
+  var f=Math.min(c.pct,1)*100,ex=c.T?Math.min(c.expTo/c.T,1)*100:0;
+  $('pFill').style.width=f+'%';$('pFill').style.background=c.ach>=c.expTo-0.005?'var(--ok)':'var(--accent)';
+  var mk=$('pMark');mk.style.left='calc('+ex+'% - 1px)';mk.style.display=c.expTo>0&&c.T?'block':'none';
+  $('pMarkL').textContent='Expected today '+compact(c.expTo);
+  $('pLeft').innerHTML='<b style="color:var(--text)">'+inr(c.ach)+'</b> achieved ('+pc(c.pct)+')';
+  var diff=c.ach-c.expTo;
+  $('pRight').innerHTML=c.T?('<span class="'+(diff>=-0.005?'pos':'neg')+'">'+(diff>=-0.005?'Ahead by ':'Behind by ')+inr(Math.abs(diff))+'</span> vs pace · '+inr(c.bal)+' to go'):'';
+  // branch comparison
+  var bl=visibleBranches();
+  $('cmpCard').classList.toggle('hide',bl.length<2&&sel!=='ALL');
+  var list=bl.map(function(b){var bc=calc(b.id,cur);return {id:b.id,name:b.name,c:bc,exp:bc.T?bc.expTo/bc.T:0};})
+    .sort(function(a,b){return b.c.pct-a.c.pct||b.c.ach-a.c.ach;});
+  $('cmpTitle').textContent='Branch comparison — '+monthLabel(cur);
+  $('chCmp').innerHTML=list.length?cmpChart(list):'<div class="empty">No branches yet.</div>';
+  $('cmpBody').innerHTML=list.map(function(o,i){var bc=o.c,d=bc.ach-bc.expTo;
+    return '<tr class="click'+(o.id===sel?' sel':'')+'" data-b="'+esc(o.id)+'"><td class="l">'+(i+1)+'</td><td class="l"><b>'+esc(o.name)+'</b></td><td>'+inr(bc.T)+'</td><td>'+inr(bc.ach)+'</td><td>'+pc(bc.pct)+'</td><td>'+inr(bc.expTo)+'</td>'+
+      '<td class="'+(d>=-0.005?'pos':'neg')+'">'+sinr(d)+'</td><td>'+inr(bc.bal)+'</td><td>'+inr(bc.rr)+'</td><td>'+bc.done+' / '+bc.n+'</td><td class="l"><span class="chip '+chipCls(bc.overall)+'">'+bc.overall+'</span></td></tr>';}).join('');
+  var tc=calc('ALL',cur);
+  $('cmpFoot').innerHTML=list.length?'<tr class="click" data-b="ALL"><td></td><td class="l">All branches</td><td>'+inr(tc.T)+'</td><td>'+inr(tc.ach)+'</td><td>'+pc(tc.pct)+'</td><td>'+inr(tc.expTo)+'</td><td class="'+(tc.ach-tc.expTo>=-0.005?'pos':'neg')+'">'+sinr(tc.ach-tc.expTo)+'</td><td>'+inr(tc.bal)+'</td><td>'+inr(tc.rr)+'</td><td></td><td class="l"><span class="chip '+chipCls(tc.overall)+'">'+tc.overall+'</span></td></tr>':'';
+  // charts
+  $('chDaily').innerHTML=c.T?dailyChart(c):'<div class="empty">Set a monthly target to see this chart.</div>';
+  $('chCum').innerHTML=c.T?cumChart(c):'<div class="empty">Set a monthly target to see this chart.</div>';
+  var cnt={},tot=0;c.rows.forEach(function(r){if(r.past||r.a!==null){cnt[r.status]=(cnt[r.status]||0)+1;tot++;}});
+  var colors={'c-ok':'var(--ok)','c-bad':'var(--bad)','c-neu':'var(--neutral)','c-acc':'var(--accent)','c-warn':'var(--warn)'};
+  var keys=Object.keys(cnt).sort(function(a,b){return cnt[b]-cnt[a];});
+  $('stBreak').innerHTML=tot?('<div class="stack">'+keys.map(function(k){return '<div style="width:'+(cnt[k]/tot*100)+'%;background:'+colors[chipCls(k)]+'" title="'+k+': '+cnt[k]+'"></div>';}).join('')+'</div><ul class="slist">'+
+    keys.map(function(k){return '<li><span class="chip '+chipCls(k)+'">'+esc(k)+'</span><b>'+cnt[k]+' day'+(cnt[k]>1?'s':'')+'</b></li>';}).join('')+'</ul>'):'<div class="empty">No days to show yet.</div>';
+  var top=c.rows.filter(function(r){return r.a!==null;}).sort(function(a,b){return b.a-a.a;}).slice(0,5);
+  $('topDays').innerHTML=top.length?'<ul class="slist">'+top.map(function(r){return '<li><span>'+pad(r.d)+' '+MONTHS[c.m-1].slice(0,3)+' · '+DOW[r.date.getDay()].slice(0,3)+'</span><span><b>'+inr(r.a)+'</b> <span class="'+(r.v>=-0.005?'pos':'neg')+'" style="font-size:12px">'+sinr(r.v)+'</span></span></li>';}).join('')+'</ul>':'<div class="empty">No entries yet.</div>';
+  // year
+  $('yTitle').textContent=branchName(sel)+' — '+c.y+' month by month';
+  var yc=yearChart(sel,c.y);$('chYear').innerHTML=yc.svg;
+  var yb='',sT=0,sA=0,sD=0;
+  yc.data.forEach(function(o,i){if(!o.c)return;var mc=o.c;sT+=mc.T;sA+=mc.ach;sD+=mc.done;
+    yb+='<tr class="click'+(o.k===cur?' sel':'')+'" data-k="'+o.k+'"><td class="l">'+MONTHS[i]+'</td><td>'+inr(mc.T)+'</td><td>'+inr(mc.ach)+'</td><td>'+pc(mc.pct)+'</td><td>'+inr(mc.bal)+'</td><td>'+mc.done+' / '+mc.n+'</td><td class="l"><span class="chip '+chipCls(mc.overall)+'">'+mc.overall+'</span></td></tr>';});
+  $('yBody').innerHTML=yb||'<tr><td colspan="7" class="l"><div class="empty">No months recorded for '+c.y+'.</div></td></tr>';
+  $('yFoot').innerHTML=yb?'<tr><td class="l">Year total</td><td>'+inr(sT)+'</td><td>'+inr(sA)+'</td><td>'+(sT?pc(sA/sT):'—')+'</td><td>'+inr(Math.max(sT-sA,0))+'</td><td>'+sD+'</td><td></td></tr>':'';
+}
+$('yBody').addEventListener('click',function(e){var tr=e.target.closest('tr[data-k]');if(tr)setMonth(tr.dataset.k);});
+function pickBranch(e){var tr=e.target.closest('tr[data-b]');if(tr){sel=tr.dataset.b;renderAll();window.scrollTo({top:0,behavior:'smooth'});}}
+$('cmpBody').addEventListener('click',pickBranch);$('cmpFoot').addEventListener('click',pickBranch);
+
+/* ---------------- nav ---------------- */
+function renderBranchSel(){
+  var bl=visibleBranches(),bs=$('branchSel'),h='';
+  if(bl.length>1||S.me.role==='admin')h+='<option value="ALL">All branches</option>';
+  h+=bl.map(function(b){return '<option value="'+esc(b.id)+'">'+esc(b.name)+(S.me.branchId===b.id?' (my branch)':'')+'</option>';}).join('');
+  bs.innerHTML=h;bs.value=sel;
+}
+function renderAll(){
+  if(!S.data)return;
+  $('monthPick').value=cur;$('meName').textContent=S.me.name;
+  $('brandSub').textContent='Renew Groups · '+(S.me.role==='admin'?'Admin':S.me.name)+' · live data';
+  $('adminPanelBtn').classList.toggle('hide',S.me.role!=='admin');
+  renderBranchSel();
+  if(tab==='tracker')renderTracker();else renderDash();
+}
+$('branchSel').addEventListener('change',function(e){sel=e.target.value;renderAll();});
+function setMonth(k){if(/^\d{4}-\d{2}$/.test(k)){cur=k;renderAll();}}
+function shift(n){var p=cur.split('-').map(Number),d=new Date(p[0],p[1]-1+n,1);setMonth(d.getFullYear()+'-'+pad(d.getMonth()+1));}
+$('prevM').onclick=function(){shift(-1);};$('nextM').onclick=function(){shift(1);};
+$('monthPick').addEventListener('change',function(e){setMonth(e.target.value);});
+document.querySelectorAll('.tabs button').forEach(function(b){b.onclick=function(){tab=b.dataset.tab;
+  document.querySelectorAll('.tabs button').forEach(function(x){x.classList.toggle('on',x===b);});
+  $('tracker').classList.toggle('hide',tab!=='tracker');$('dash').classList.toggle('hide',tab!=='dash');renderAll();};});
+var menu=$('menu');
+$('menuBtn').onclick=function(e){e.stopPropagation();menu.classList.toggle('open');};
+document.addEventListener('click',function(){menu.classList.remove('open');});
+$('refreshBtn').onclick=function(){call('data').then(function(){renderAll();toast('Data refreshed');}).catch(function(e){toast(e.message,true);});};
+$('printBtn').onclick=function(){window.print();};
+function download(name,text,type){var b=new Blob([text],{type:type}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},500);}
+$('expCsv').onclick=function(){var c=calc(sel,cur),L=[['Branch',branchName(sel)],['Month',monthLabel(cur)],[],['Date','Day','Daily Target','Achieved','Daily Variance','Cumulative Target','Cumulative Achieved','Cumulative Gap','Achievement %','Status']];
+  c.rows.forEach(function(r){var h=r.a!==null||r.d<c.last;L.push([c.y+'-'+pad(c.m)+'-'+pad(r.d),DOW[r.date.getDay()],c.dt.toFixed(2),r.a===null?'':r.a,r.a===null?'':r.v.toFixed(2),r.cumT.toFixed(2),h?r.cumA.toFixed(2):'',h?r.gap.toFixed(2):'',h?(r.pct*100).toFixed(1)+'%':'',r.status]);});
+  L.push([]);L.push(['Monthly Target',c.T]);L.push(['Achieved',c.ach]);L.push(['Achievement %',(c.pct*100).toFixed(1)+'%']);L.push(['Balance',c.bal]);L.push(['Required Daily Run Rate',c.rr.toFixed(2)]);L.push(['Overall Status',c.overall]);
+  if(visibleBranches().length>1){L.push([]);L.push(['Branch','Target','Achieved','Achievement %','Balance','Days Entered','Status']);
+    visibleBranches().forEach(function(b){var bc=calc(b.id,cur);L.push([b.name,bc.T,bc.ach,(bc.pct*100).toFixed(1)+'%',bc.bal,bc.done,bc.overall]);});}
+  download('target-tracker-'+branchName(sel).replace(/\W+/g,'-')+'-'+cur+'.csv','﻿'+L.map(function(r){return r.map(function(v){v=String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}).join(',');}).join('\r\n'),'text/csv');};
+
+/* ---------------- admin ---------------- */
+var dlg=$('dlgAdmin');
+document.querySelectorAll('[data-close]').forEach(function(b){b.onclick=function(){b.closest('dialog').close();};});
+function adminErr(m){$('adminErr').textContent=m||'';}
+function renderAdmin(){
+  $('brBody').innerHTML=S.data.branches.map(function(b){return '<tr data-id="'+esc(b.id)+'"><td><input class="field br-name" value="'+esc(b.name)+'"></td><td><input class="field br-pw" type="password" placeholder="Leave blank to keep"></td>'+
+    '<td class="l"><label><input type="checkbox" class="br-act"'+(b.active?' checked':'')+'> Active</label></td><td><button class="btn sm br-save">Save</button></td></tr>';}).join('')||'<tr><td colspan="4" class="l"><div class="empty">No branches yet — add your first one below.</div></td></tr>';
+  $('clearHint').textContent=sel==='ALL'?'Select a single branch first.':branchName(sel)+' · '+monthLabel(cur);
+  $('clearMonth').disabled=sel==='ALL';
+}
+$('adminPanelBtn').onclick=function(){adminErr('');renderAdmin();dlg.showModal();};
+$('brBody').addEventListener('click',function(e){if(!e.target.classList.contains('br-save'))return;var tr=e.target.closest('tr'),p={id:tr.dataset.id,name:tr.querySelector('.br-name').value.trim(),active:tr.querySelector('.br-act').checked},pw=tr.querySelector('.br-pw').value;
+  if(pw)p.password=pw;adminErr('');
+  call('updateBranch',p).then(function(j){renderAdmin();renderAll();toast(j.message+(pw?' (password reset)':''));}).catch(function(e){adminErr(e.message);});});
+$('nbAdd').onclick=function(){var n=$('nbName').value.trim(),pw=$('nbPw').value;adminErr('');
+  call('addBranch',{name:n,password:pw}).then(function(j){$('nbName').value='';$('nbPw').value='';renderAdmin();renderAll();toast(j.message);}).catch(function(e){adminErr(e.message);});};
+$('apSave').onclick=function(){var o=$('apOld').value,n=$('apNew').value,n2=$('apNew2').value;adminErr('');
+  if(n!==n2){adminErr('New passwords do not match.');return;}
+  call('changeAdminPw',{oldPassword:o,newPassword:n}).then(function(j){['apOld','apNew','apNew2'].forEach(function(i){$(i).value='';});toast(j.message);}).catch(function(e){adminErr(e.message);});};
+$('clearMonth').onclick=function(){if(sel==='ALL')return;
+  if(!confirm('Delete the target and every entry for '+branchName(sel)+' in '+monthLabel(cur)+'? This cannot be undone.'))return;
+  call('clearMonth',{branchId:sel,month:cur}).then(function(j){renderAdmin();renderAll();toast(j.message);}).catch(function(e){adminErr(e.message);});};
+
+var tt;function toast(m,bad){var t=$('toast');t.textContent=m;t.classList.toggle('bad',!!bad);t.classList.add('show');clearTimeout(tt);tt=setTimeout(function(){t.classList.remove('show');},bad?4500:2600);}
+
+/* auto-refresh so everyone sees new entries */
+setInterval(function(){
+  if(!S.token||!S.data||busy||document.hidden)return;
+  var a=document.activeElement;if(a&&(a.tagName==='INPUT'||a.tagName==='SELECT')&&!a.closest('header'))return;
+  if(dlg.open)return;
+  call('data',{},true).then(renderAll).catch(function(){});
+},60000);
+
+/* start */
+if(S.token&&api){call('data',{},true).then(function(){enterApp();}).catch(function(e){if(e.code!=='AUTH')showGate(e.message);});}
+else showGate();
+})();
+</script>
+</body>
+</html>
